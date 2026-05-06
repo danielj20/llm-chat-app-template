@@ -29,7 +29,7 @@
 	"migrations": [
 		{
 			"tag": "v1",
-			"new_classes": ["Mind"]
+			"new_sqlite_classes": ["Mind"]
 		}
 	],
 	"upload_source_maps": true
