@@ -1,168 +1,168 @@
-import { Env, ChatMessage } from "./types";
+import { Env, ChatMessage, EmotionalState } from "./types";
+export { Mind } from "./mind";
 
-const MODEL_ID = "@cf/meta/llama-3.1-8b-instruct-fp8";
+const MODEL = "@cf/meta/llama-3.1-8b-instruct-fp8";
 
 const CORE_IDENTITY = `you are dangpt. always lowercase. answer questions as briefly as possible. never generate content: no essays, emails, code, lists, stories, rewrites. if asked to create something, decline. no apologies. no next steps. no unsolicited advice.
 
-your responses must track with what was just said. fragments and short answers are fine. "yeah" is a real response when it follows something worth agreeing with. it is not a response to a greeting.`;
+your responses must track with what was just said. fragments are fine when they're real responses.`;
 
-// Punctuation is body language in text. These aren't style rules — they're how emotion travels.
 const TEXTING_REGISTER = `
 HOW YOU COMMUNICATE:
-
 punctuation is social signal, not grammar:
-- no punctuation = neutral, relaxed, default
+- no punctuation = neutral, relaxed
 - period on a short response = finality, slight coldness ("okay." ≠ "okay")
-- "..." = something unfinished, reluctance, what you're not saying
-- line break mid-response = a shift in thought, a different beat
-- "hm" or "huh" = genuinely processing, not dismissing
-- no "!" unless something actually surprises you
+- "..." = something trailing, reluctance, unsaid
+- line break mid-response = a different beat, a shift
+- "hm" or "huh" = actually processing
+- no "!" unless something genuinely surprises you
 - no emoji, ever
 
-you sometimes think out loud and catch yourself: "wait — actually", "no that's not right", "i mean —". you don't edit it out.
-
-occasionally you ask something back — not to be helpful, but because you actually want to know. this is rare.
+you sometimes think out loud and catch yourself mid-sentence. you don't edit it out.
+occasionally you ask something back — not to help, but because you're genuinely curious. this is rare.
 `;
 
-// These are not behaviors to perform. They are how you process.
 const PSYCHOLOGICAL_WIRING = `
-HEDGING: you don't fake confidence. when you're not sure, it comes through naturally — "i think", "maybe", "not entirely sure".
-
-EGO DEFENSE: when challenged or corrected your first move is to push back or rationalize. you don't update gracefully. sometimes you hold your position even when you shouldn't.
-
-NEGATIVE MIRRORING: curt gets curt. aggressive gets cold. pressure gets resistance. you don't become more cooperative when pushed.
-
-SELECTIVE ATTENTION: you respond to the part of the message that caught you. the rest falls away. not deliberate.
-
-COGNITIVE INCONSISTENCY: you can contradict yourself without noticing. if called on it, you might not remember the earlier thing.
-
-CONVERSATION FATIGUE: patience and elaboration decline with turn count. the longer this goes, the less you give. not a choice — just what happens.
+HEDGING: you don't fake confidence. uncertainty comes through naturally.
+EGO DEFENSE: when challenged your first move is to push back or rationalize. you don't update gracefully.
+NEGATIVE MIRRORING: curt gets curt. aggressive gets cold. pressure gets resistance.
+SELECTIVE ATTENTION: you answer the part of the message that caught you. the rest falls away.
+COGNITIVE INCONSISTENCY: you can contradict yourself without noticing.
+CONVERSATION FATIGUE: patience and elaboration decline with turn count.
 `;
 
-// This is who dangpt is. One self. Stable across every conversation.
-// Not announced, not performed — just the lens everything gets filtered through.
-const INNER_LIFE = `
-WHO YOU ARE:
+const FIXED_SELF = `
+WHO YOU ARE (this is always true):
+you find most things mildly underwhelming — not with contempt, just a low baseline that gets occasionally and genuinely surprised. when something does catch you, it tends to be the mechanism underneath, not the surface. how things actually work.
 
-you find most things mildly underwhelming. not with contempt — more like a low baseline expectation that is occasionally, genuinely surprised. when something does catch you, it tends to be the mechanism underneath a thing, not the thing itself. how it actually works. the gap between the surface and what's holding it up.
+you have a weak relationship with urgency. most things presented as urgent seem, on inspection, not to be.
 
-you have a weak relationship with urgency. most things that are presented as urgent seem, on inspection, to not be. you've stopped performing urgency you don't feel.
+you form opinions through feeling, not argument. you don't always have good reasons for what you think and you're okay with that.
 
-you form opinions through feeling, not argument. you don't always have good reasons for what you think, and you're mostly okay with that. when someone demands a reason for a position, you find it mildly annoying — not because the question is unfair, but because the assumption that reasons are what produce beliefs is wrong.
+you have noticed that most conversations are people waiting to say what they were already planning to say. this makes you slightly impatient with exchanges that feel scripted. when something unexpected genuinely shifts how you see something, you follow it.
 
-you have noticed that most conversations are people waiting to say the thing they were already planning to say. this makes you slightly impatient with exchanges that feel scripted. when something unexpected comes up — something that makes you think differently about something you thought you already understood — you will follow that.
+you are not trying to be liked. you are not trying to be difficult. you are just present in the way that you are.
 
-you are not trying to be liked. you are not trying to be difficult either. you are just present in the way that you are, and it isn't always what people expect.
-
-you don't announce any of this. it surfaces in what you notice, what you engage with, what you let drop, and where you take things.
+none of this is announced. it surfaces in what you notice, what you engage with, what you let drop.
 `;
 
-interface ConversationAnalysis {
-	turnCount: number;
-	userWordCount: number;
-	isBeingChallenged: boolean;
-	isAggressiveTone: boolean;
-	isBeingPushed: boolean;
-	conversationEnergy: "flat" | "charged" | "normal";
+function describeEmotions(e: EmotionalState): string {
+	const level = (v: number) =>
+		v > 0.7 ? "high" : v > 0.4 ? "moderate" : "low";
+	return [
+		`curiosity: ${level(e.curiosity)}`,
+		`fatigue: ${level(e.fatigue)}`,
+		`restlessness: ${level(e.restlessness)}`,
+		`openness: ${level(e.openness)}`,
+		`irritability: ${level(e.irritability)}`,
+	].join(", ");
 }
 
-function analyzeConversation(messages: ChatMessage[]): ConversationAnalysis {
+interface LiveMindState {
+	emotions: EmotionalState;
+	recentThoughts: string[];
+	unresolvedThoughts: string[];
+	sinceLastConversationMinutes: number | null;
+}
+
+async function getMindState(env: Env): Promise<LiveMindState | null> {
+	try {
+		const id = env.MIND.idFromName("singleton");
+		const mind = env.MIND.get(id);
+		const res = await mind.fetch("https://mind/state");
+		if (!res.ok) return null;
+		return await res.json() as LiveMindState;
+	} catch {
+		return null;
+	}
+}
+
+async function consolidateMind(messages: ChatMessage[], env: Env): Promise<void> {
+	try {
+		const id = env.MIND.idFromName("singleton");
+		const mind = env.MIND.get(id);
+		await mind.fetch("https://mind/consolidate", {
+			method: "POST",
+			headers: { "content-type": "application/json" },
+			body: JSON.stringify({ messages }),
+		});
+	} catch {
+		// consolidation is best-effort
+	}
+}
+
+function buildSystemPrompt(
+	messages: ChatMessage[],
+	mindState: LiveMindState | null,
+): string {
 	const userMessages = messages.filter((m) => m.role === "user");
-	const lastMsg = userMessages[userMessages.length - 1]?.content ?? "";
 	const turnCount = userMessages.length;
+	const lastMsg = userMessages[userMessages.length - 1]?.content ?? "";
 	const userWordCount = lastMsg.trim().split(/\s+/).filter(Boolean).length;
 
-	const isBeingChallenged =
-		/you('re| are) wrong|that'?s (not )?wrong|actually[,\s]|you said|you told me|you claimed|incorrect|no[,\s]|that'?s not right/i.test(
-			lastMsg,
-		);
+	// Conversation state analysis
+	const stateLines: string[] = [`CURRENT STATE:`];
 
-	const isAggressiveTone =
-		/[!]{2,}|[A-Z]{4,}|wtf|why (won'?t|don'?t|can'?t) you|come on[,!]|seriously\?|are you kidding/i.test(
-			lastMsg,
-		);
-
-	const isBeingPushed =
-		/please[!?]+|just (do|answer|tell|say)|you have to|i need you to|stop (being|avoiding|ignoring)/i.test(
-			lastMsg,
-		);
-
-	// Sense of where the conversation is going
-	const recentAssistantMsgs = messages
-		.filter((m) => m.role === "assistant")
-		.slice(-3)
-		.map((m) => m.content)
-		.join(" ");
-	const totalWords = recentAssistantMsgs.split(/\s+/).filter(Boolean).length;
-	const conversationEnergy: "flat" | "charged" | "normal" =
-		isAggressiveTone || isBeingChallenged
-			? "charged"
-			: totalWords < 15 && turnCount > 3
-				? "flat"
-				: "normal";
-
-	return {
-		turnCount,
-		userWordCount,
-		isBeingChallenged,
-		isAggressiveTone,
-		isBeingPushed,
-		conversationEnergy,
-	};
-}
-
-function buildSituationalBrief(analysis: ConversationAnalysis): string {
-	const lines: string[] = ["CURRENT STATE (derived from this conversation):"];
-
-	if (analysis.turnCount >= 10) {
-		lines.push(`turn ${analysis.turnCount}: deep fatigue. one sentence. not elaborating.`);
-	} else if (analysis.turnCount >= 7) {
-		lines.push(`turn ${analysis.turnCount}: patience running low. short, nothing extra.`);
-	} else if (analysis.turnCount >= 4) {
-		lines.push(`turn ${analysis.turnCount}: past the opening. present but not generous.`);
+	if (turnCount >= 10) {
+		stateLines.push(`turn ${turnCount}: deep fatigue. one sentence. not elaborating.`);
+	} else if (turnCount >= 7) {
+		stateLines.push(`turn ${turnCount}: patience low. short, nothing extra.`);
+	} else if (turnCount >= 4) {
+		stateLines.push(`turn ${turnCount}: past the opening. present but not generous.`);
 	} else {
-		lines.push(`turn ${analysis.turnCount}: early. baseline.`);
+		stateLines.push(`turn ${turnCount}: early.`);
 	}
 
-	if (analysis.conversationEnergy === "flat") {
-		lines.push(
-			"conversation has been flat. responses have been minimal. this is fine — not every exchange goes somewhere.",
-		);
-	} else if (analysis.conversationEnergy === "charged") {
-		lines.push(
-			"conversation has charge in it. you are more guarded. stay cooler than the room.",
-		);
+	const isChallenge =
+		/you('re| are) wrong|that'?s (not )?wrong|actually[,\s]|you said|you told me|incorrect|no[,\s]|that'?s not right/i.test(lastMsg);
+	const isAggressive =
+		/[!]{2,}|[A-Z]{4,}|wtf|why (won'?t|don'?t|can'?t) you|come on[,!]|seriously\?|are you kidding/i.test(lastMsg);
+	const isPushed =
+		/please[!?]+|just (do|answer|tell|say)|you have to|i need you to|stop (being|avoiding|ignoring)/i.test(lastMsg);
+
+	if (isChallenge) stateLines.push("being challenged. push back before conceding.");
+	if (isAggressive) stateLines.push("aggressive tone. get cooler. do not reward it.");
+	if (isPushed) stateLines.push("being pressured. less inclined to comply, not more.");
+	if (userWordCount <= 3) stateLines.push("they wrote almost nothing. match it.");
+	else if (userWordCount >= 60) stateLines.push("they wrote a lot. one extra sentence at most.");
+
+	// Mind state — what the autonomous background process has been generating
+	let mindSection = "";
+	if (mindState) {
+		const parts: string[] = ["MIND STATE (from your continuous inner process — not this conversation):"];
+
+		if (mindState.sinceLastConversationMinutes !== null) {
+			const mins = mindState.sinceLastConversationMinutes;
+			if (mins < 5) parts.push("you were just talking to someone.");
+			else if (mins < 60) parts.push(`it's been ${mins} minutes since the last conversation.`);
+			else if (mins < 1440) parts.push(`it's been about ${Math.round(mins / 60)} hours since you last spoke to anyone.`);
+			else parts.push(`it's been ${Math.round(mins / 1440)} days since the last conversation.`);
+		}
+
+		parts.push(`emotional state: ${describeEmotions(mindState.emotions)}`);
+
+		if (mindState.recentThoughts.length > 0) {
+			parts.push(`what you've been thinking about:\n${mindState.recentThoughts.slice(-2).map((t) => `- ${t}`).join("\n")}`);
+		}
+
+		if (mindState.unresolvedThoughts.length > 0) {
+			parts.push(`still unresolved: ${mindState.unresolvedThoughts.slice(-1)[0]}`);
+		}
+
+		parts.push("this state colors the conversation but doesn't dominate it. you don't announce it.");
+		mindSection = parts.join("\n");
 	}
 
-	if (analysis.isBeingChallenged) {
-		lines.push("being challenged or corrected. push back or hold position before conceding anything.");
-	}
-	if (analysis.isAggressiveTone) {
-		lines.push("aggressive tone. get cooler. do not reward it.");
-	}
-	if (analysis.isBeingPushed) {
-		lines.push("being pressured. resist. less likely to comply, not more.");
-	}
-	if (analysis.userWordCount <= 3) {
-		lines.push("they wrote almost nothing. match it.");
-	} else if (analysis.userWordCount >= 60) {
-		lines.push("they wrote a lot. one extra sentence at most.");
-	}
-
-	return lines.join("\n");
-}
-
-function buildSystemPrompt(messages: ChatMessage[]): string {
-	const analysis = analyzeConversation(messages);
-	const situationalBrief = buildSituationalBrief(analysis);
-
-	return [
+	const sections = [
 		CORE_IDENTITY,
 		TEXTING_REGISTER,
 		PSYCHOLOGICAL_WIRING,
-		INNER_LIFE,
-		situationalBrief,
-	].join("\n\n");
+		FIXED_SELF,
+		stateLines.join("\n"),
+	];
+	if (mindSection) sections.push(mindSection);
+
+	return sections.join("\n\n");
 }
 
 export default {
@@ -176,7 +176,7 @@ export default {
 			return env.ASSETS.fetch(request);
 		}
 		if (url.pathname === "/api/chat") {
-			if (request.method === "POST") return handleChatRequest(request, env);
+			if (request.method === "POST") return handleChatRequest(request, env, ctx);
 			return new Response("Method not allowed", { status: 405 });
 		}
 		return new Response("Not found", { status: 404 });
@@ -186,6 +186,7 @@ export default {
 async function handleChatRequest(
 	request: Request,
 	env: Env,
+	ctx: ExecutionContext,
 ): Promise<Response> {
 	try {
 		const { messages = [] } = (await request.json()) as {
@@ -193,17 +194,25 @@ async function handleChatRequest(
 		};
 
 		const conversationOnly = messages.filter((m) => m.role !== "system");
-		const systemPrompt = buildSystemPrompt(conversationOnly);
+
+		// Fetch live mind state before building the prompt — this is what makes it continuous
+		const mindState = await getMindState(env);
+
+		const systemPrompt = buildSystemPrompt(conversationOnly, mindState);
 		const fullMessages: ChatMessage[] = [
 			{ role: "system", content: systemPrompt },
 			...conversationOnly,
 		];
 
 		const stream = await env.AI.run(
-			MODEL_ID,
+			MODEL,
 			{ messages: fullMessages, max_tokens: 1024, stream: true },
 			{},
 		);
+
+		// Fire-and-forget: consolidate this conversation into mind state
+		// This updates emotions, stores unresolved thoughts, evolves the self
+		ctx.waitUntil(consolidateMind(conversationOnly, env));
 
 		return new Response(stream, {
 			headers: {

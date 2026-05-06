@@ -18,5 +18,19 @@
 	"ai": {
 		"binding": "AI"
 	},
+	"durable_objects": {
+		"bindings": [
+			{
+				"name": "MIND",
+				"class_name": "Mind"
+			}
+		]
+	},
+	"migrations": [
+		{
+			"tag": "v1",
+			"new_classes": ["Mind"]
+		}
+	],
 	"upload_source_maps": true
 }
