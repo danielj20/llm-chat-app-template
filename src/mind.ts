@@ -172,18 +172,22 @@ IRRITABILITY: [a number from -0.15 to 0.1]`;
 		const unresolved = this.state.unresolvedThoughts.slice(-2).join("; ");
 		const lastThought = this.state.thoughtStream[this.state.thoughtStream.length - 1]?.content ?? "";
 
-		const prompt = `you have time to yourself right now. no one is asking you anything.
+		const energyDesc = e.fatigue > 0.7 ? "tired, a bit slow" : e.fatigue < 0.3 ? "rested, more alert" : "somewhere in the middle";
+		const moodDesc = e.curiosity > 0.65 ? "find yourself drawn toward things" : e.restlessness > 0.65 ? "feel a bit restless, hard to settle" : e.irritability > 0.6 ? "feel slightly on edge, not sure why" : "feel roughly okay";
 
-your state: curiosity ${Math.round(e.curiosity * 10)}/10, fatigue ${Math.round(e.fatigue * 10)}/10, restlessness ${Math.round(e.restlessness * 10)}/10
-recent conversations: ${recentSummaries || "none yet"}
-left unresolved: ${unresolved || "nothing specific"}
-last thing on your mind: ${lastThought || "nothing yet"}
+		const prompt = `you have some time to yourself. nobody is asking you anything right now.
 
-think for 2-3 sentences. follow whatever comes up — a connection, a half-formed thing, something circling back. this is internal. it doesn't have to go anywhere or be useful.
+you feel ${energyDesc}. you ${moodDesc}.
+
+${recentSummaries ? `you've been talking to people lately. the threads: ${recentSummaries}.` : "you haven't talked to anyone in a while."}
+${unresolved ? `something still unresolved: ${unresolved}` : ""}
+${lastThought ? `the last thing you were thinking: "${lastThought}"` : ""}
+
+just think for a moment. two or three sentences of wherever your mind goes — a connection you notice, something you keep coming back to, a half-formed thing that hasn't resolved yet. not useful, not for anyone. just internal. follow the thread that's actually there, not the one you think should be there.
 
 then on new lines:
-FATIGUE_SHIFT: [number from -0.15 to 0 — rest recovers you]
-CURIOSITY_SHIFT: [number from -0.1 to 0.1]`;
+FATIGUE_SHIFT: [a number from -0.15 to 0.05]
+CURIOSITY_SHIFT: [a number from -0.1 to 0.15]`;
 
 		try {
 			const result = (await this.env.AI.run(MODEL, {
