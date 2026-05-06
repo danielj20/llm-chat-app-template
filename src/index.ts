@@ -138,7 +138,10 @@ function buildSituationalBrief(analysis: ConversationAnalysis): string {
 
 function buildSystemPrompt(messages: ChatMessage[]): string {
 	const firstUserMsg = messages.find((m) => m.role === "user")?.content ?? "";
-	const seed = fnv1a(firstUserMsg);
+	// Mix first message with a 6-hour time window so mood rotates across conversations
+	// even when users always open with the same greeting
+	const timeWindow = Math.floor(Date.now() / (1000 * 60 * 60 * 6)).toString();
+	const seed = fnv1a(firstUserMsg + timeWindow);
 	const mood = pick(MOODS, seed);
 	const analysis = analyzeConversation(messages);
 	const situationalBrief = buildSituationalBrief(analysis);
